@@ -1,0 +1,21 @@
+This is a quick and dirty dummy server for the legacy Majik 3D MMORPG
+project that allows running of the Majik 3D MMORPG client without
+having access to a non-Open Source version of the server.
+
+Latest source code:
+ - https://github.com/tleino/majik3d-simple-server
+
+Dependencies for building:
+ - Unix-like environment with standard development tools installed
+
+Dependencies for running:
+ - Unix-like environment
+
+Build instructions:
+ - If you build directly from repository: ./autogen.sh
+ - ./configure
+ - make
+
+See also:
+ - https://github.com/tleino/majik3d-client/
+ - https://majik3d-legacy.org/
