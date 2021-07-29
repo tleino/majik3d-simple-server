@@ -26,41 +26,61 @@
 #include <math.h>
 #include <stdarg.h>
 
-#define MAX_USERS 128
-#define READ_BLOCK 128
+#define MAX_USERS	128
+#define READ_BLOCK	128
 
-size_t
-parseline(char *base, char *dst, size_t dstsz);
-int tcpbind(const char *ip, int port);
+enum {
+	CMD_MOVE = 50,
+	CMD_LOGIN = 51,
+	CMD_OWN_ID = 52,
+	CMD_ADD_OBJECT = 55,
+	CMD_SUN_POS = 56,
+	CMD_MOVE_DIRECTION = 57,
+	CMD_PROMPT = 220,
+#if 0	/* Not used / unsupported in this version */
+	CMD_REQUIREDVERSION = 10,
+	CMD_QUIT = 53,
+	CMD_SAY = 54,
+	CMD_HEADING = 58,
+	CMD_MOVE_STOP = 59,
+	CMD_TURN = 60,
+	CMD_DIALOG = 100,
+	CMD_MAP = 189,
+	CMD_SAYHIDE = 223
+#endif
+};
+
+size_t			 parseline(char *, char *, size_t);
+int			 tcpbind(const char *, int);
 
 struct server;
 
 struct evsrc
 {
-	struct pollfd *pfd;
-	int (*readcb)(struct evsrc *);
-	struct server *server;
-	int sz;
-	int objid;
-	double x;
-	double y;
-	double heading;
-	char buf[READ_BLOCK];
+	struct pollfd	*pfd;
+	int		(*readcb)(struct evsrc *);
+	struct server	*server;
+	int		 sz;
+	int		 objid;
+	double		 x;
+	double		 y;
+	double		 heading;
+	char		 buf[READ_BLOCK];
 };
 
 struct server
 {
-	struct evsrc srcs[MAX_USERS + 1];
-	struct pollfd pfds[MAX_USERS + 1];
-	int nfds;
-	int users;
-	int next_objid;
-	double sun_pitch;
+	struct evsrc	 srcs[MAX_USERS + 1];
+	struct pollfd	 pfds[MAX_USERS + 1];
+	int		 nfds;
+	int 		 users;
+	int		 next_objid;
+	double		 sun_pitch;
 };
 
 struct msgv {
-	size_t sz;
-	const char *buf;
+	size_t		 sz;
+	const char	*buf;
 };
 
 static int		 server_read(struct evsrc *);
@@ -131,10 +151,12 @@ send_all_objs(struct server *srv, struct evsrc *src)
 		other = &srv->srcs[i];
 		if (other->objid != 0)
 			send_msg(src->pfd->fd,
-			    msgv("55 %d %f %f %d %s\r\n",
-			    other->objid, other->x, other->y,
-			    (int) other->heading,
-			    rand() % 2 == 0 ? "stickman.ac" : "snowman.ac"));
+			    msgv("%d %d %f %f %d %s\r\n",
+			        CMD_ADD_OBJECT,
+			        other->objid, other->x, other->y,
+			        (int) other->heading,
+			        rand() % 2 == 0 ? "stickman.ac" :
+			        "snowman.ac"));
 	}
 }
 
@@ -155,7 +177,7 @@ handle_msg(struct evsrc *src, const char *msg)
 		return;
 	}
 	switch (code) {
-	case 57:
+	case CMD_MOVE_DIRECTION:
 		if (src->objid != 0) {
 			startstop = 0;
 			x = 0;
@@ -163,34 +185,41 @@ handle_msg(struct evsrc *src, const char *msg)
 			heading = 0;
 			if (sscanf(msg, "%*d %f %f %f %d",
 			    &x, &y, &heading, &startstop) != 4) {
-				warn("parse error while parsing 57");
+				warn("parse error while parsing "
+			            "CMD_MOVE_DIRECTION");
 			} else {
 				if (startstop == 0) {
 					src->x = x;
 					src->y = y;
 					src->heading = heading;
 					broadcast_msg(src->server,
-					    msgv("50 %d %f %f %d\r\n",
+					    msgv("%d %d %f %f %d\r\n",
+					    CMD_MOVE,
 					    src->objid, src->x, src->y,
 					    (int) src->heading));
 				}
 			}
 		}
 		break;
-	case 51:
+	case CMD_LOGIN:
 		if (src->objid == 0) {
 			src->objid = src->server->next_objid++;
 			src->x = 5000.0 + rand() % 200;
 			src->y = 5000.0 + rand() % 200;
 			src->heading = rand() % 360;
 
-			send_msg(src->pfd->fd, msgv("52 %d\r\n", src->objid));
+			send_msg(src->pfd->fd, msgv("%d %d\r\n", CMD_OWN_ID,
+			    src->objid));
 			send_all_objs(src->server, src);
 			broadcast_msg(src->server,
-			    msgv("55 %d %f %f %d %s\r\n",
-			    src->objid, src->x, src->y, (int) src->heading,
-			    rand() % 2 == 0 ? "stickman.ac" : "snowman.ac"));
-			broadcast_msg(src->server, msgv("56 %f %f %f %f\r\n",
+			    msgv("%d %d %f %f %d %s\r\n",
+			    CMD_ADD_OBJECT,
+			        src->objid, src->x, src->y,
+			        (int) src->heading,
+			        rand() % 2 == 0 ? "stickman.ac" :
+			        "snowman.ac"));
+			broadcast_msg(src->server, msgv("%d %f %f %f %f\r\n",
+			    CMD_SUN_POS,
 			    M_PI/2, src->server->sun_pitch, 1.2, 3.5));
 		}
 		break;
@@ -241,11 +270,7 @@ acceptclient(struct server *srv)
 
 	src = server_add_evsrc(srv, fd, client_read);
 
-
-#define START_MSG "220 51\r\n"
-	if (send(fd, START_MSG, strlen(START_MSG),
-	    MSG_DONTWAIT | MSG_NOSIGNAL) == -1)
-		warn("send");
+	send_msg(fd, msgv("%d %d\r\n", CMD_PROMPT, CMD_LOGIN));
 }
 
 static void
@@ -266,7 +291,8 @@ wait_ev(struct server *srv)
 		else
 			srv->sun_pitch = M_PI + 0.2;
 
-		broadcast_msg(srv, msgv("56 %f %f %f %f\r\n",
+		broadcast_msg(srv, msgv("%d %f %f %f %f\r\n",
+		    CMD_SUN_POS,
 		    M_PI/2, srv->sun_pitch, 1.2, 3.5));
 
 		return;
